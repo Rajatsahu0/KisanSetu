@@ -44,9 +44,9 @@ cp .env.example .env.local
 3. Configure environment variables:
 ```env
 VITE_API_BASE_URL=http://localhost:5000/api
-VITE_AWS_REGION=ap-south-1
-VITE_COGNITO_USER_POOL_ID=your-user-pool-id
-VITE_COGNITO_CLIENT_ID=your-client-id
+VITE_FIREBASE_API_KEY=your-firebase-api-key
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
 ```
 
 ### Development
@@ -102,12 +102,12 @@ src/
 ## Key Features Implementation
 
 ### Authentication
-- AWS Cognito integration for secure authentication
+- Firebase Authentication for secure login
 - JWT token management with automatic refresh
 - Phone number-based registration and login
 
 ### File Upload
-- Direct S3 upload with progress tracking
+- Google Cloud Storage upload with progress tracking
 - File validation and compression
 - Support for images, documents, and audio files
 
