@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="KisanSetu - Comprehensive farming assistant for soil analysis, quality grading, and agricultural advisory" />
+    <meta name="theme-color" content="#16a34a" />
+    <link rel="dns-prefetch" href="https://orgfarm-1e2a0c7bc2-dev-ed.develop.my.site.com" />
+    <link rel="dns-prefetch" href="https://orgfarm-1e2a0c7bc2-dev-ed.develop.my.salesforce-scrt.com" />
+    <title>KisanSetu - Smart Farming Assistant</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="recaptcha-container"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script type="text/javascript">
+      // Preconnect to Salesforce domains early (reduces DNS + TLS handshake time)
+      (function() {
+        var domains = [
+          'https://orgfarm-1e2a0c7bc2-dev-ed.develop.my.site.com',
+          'https://orgfarm-1e2a0c7bc2-dev-ed.develop.my.salesforce-scrt.com'
+        ];
+        domains.forEach(function(d) {
+          var link = document.createElement('link');
+          link.rel = 'preconnect';
+          link.href = d;
+          link.crossOrigin = 'anonymous';
+          document.head.appendChild(link);
+        });
+      })();
+
+      var agentLoaded = false;
+
+      function initEmbeddedMessaging() {
+        try {
+          embeddedservice_bootstrap.settings.language = 'en_US';
+          embeddedservice_bootstrap.init(
+            '00Dg5000008PhLM',
+            'KisanMitra_Channel',
+            'https://orgfarm-1e2a0c7bc2-dev-ed.develop.my.site.com/ESWKisanMitraChannel1776189293533',
+            {
+              scrt2URL: 'https://orgfarm-1e2a0c7bc2-dev-ed.develop.my.salesforce-scrt.com'
+            }
+          );
+        } catch (err) {
+          console.error('Error loading Embedded Messaging: ', err);
+        }
+      }
+
+      function loadAgentforce() {
+        if (agentLoaded) return;
+        agentLoaded = true;
+        var s = document.createElement('script');
+        s.type = 'text/javascript';
+        s.src = 'https://orgfarm-1e2a0c7bc2-dev-ed.develop.my.site.com/ESWKisanMitraChannel1776189293533/assets/js/bootstrap.min.js';
+        s.onload = initEmbeddedMessaging;
+        document.body.appendChild(s);
+      }
+
+      // Strategy: Load after page is idle, or on first user interaction — whichever comes first
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(loadAgentforce, { timeout: 3000 });
+      } else {
+        setTimeout(loadAgentforce, 2000);
+      }
+      ['mousemove', 'scroll', 'touchstart', 'keydown'].forEach(function(evt) {
+        document.addEventListener(evt, loadAgentforce, { once: true, passive: true });
+      });
+    </script>
+  </body>
+</html>

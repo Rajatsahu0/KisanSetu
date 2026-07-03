@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Auth Storage</title>
+</head>
+<body>
+    <h1>Clear Authentication Storage</h1>
+    <button onclick="clearStorage()">Clear All Auth Data</button>
+    <div id="result"></div>
+    
+    <script>
+        function clearStorage() {
+            // Clear all auth-related items
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('tokenExpiry');
+            localStorage.removeItem('user');
+            localStorage.removeItem('persist:root');
+            
+            // Clear all localStorage
+            localStorage.clear();
+            
+            // Clear sessionStorage
+            sessionStorage.clear();
+            
+            document.getElementById('result').innerHTML = '<p style="color: green;">✓ All authentication data cleared! Please refresh the page.</p>';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+# ─── Build Output ───
+**/bin/
+**/obj/
+**/dist/
+**/node_modules/
+**/package-lock.json
+
+# ─── IDE ───
+.vs/
+.vscode/
+*.user
+*.suo
+
+# ─── Environment & Secrets ───
+*.env
+!.env.example
+appsettings.Development.json
+appsettings.Production.json
+
+# ─── OS Files ───
+Thumbs.db
+.DS_Store
+
+# ─── Logs ───
+*.log
+logs/
+
+# ─── Docker ───
+.dockerignore
+
+# ─── Temp ───
+*.tmp
+*.swp
