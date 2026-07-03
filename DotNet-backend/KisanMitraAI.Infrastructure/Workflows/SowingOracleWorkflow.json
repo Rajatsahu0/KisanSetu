@@ -1,0 +1,343 @@
+{
+  "Comment": "Sowing Oracle Predictive Planting Recommendations Workflow",
+  "StartAt": "FetchWeatherData",
+  "States": {
+    "FetchWeatherData": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "WeatherDataCollectorFunction",
+        "Payload": {
+          "location.$": "$.location",
+          "daysAhead": 90
+        }
+      },
+      "ResultPath": "$.weatherData",
+      "Next": "RetrieveSoilData",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "WeatherFetchFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "RetrieveSoilData": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "SoilDataRetrieverFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId"
+        }
+      },
+      "ResultPath": "$.soilData",
+      "Next": "AnalyzePlantingWindows",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "SoilDataRetrievalFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "AnalyzePlantingWindows": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "PlantingWindowAnalyzerFunction",
+        "Payload": {
+          "cropType.$": "$.cropType",
+          "weatherData.$": "$.weatherData.Payload",
+          "soilData.$": "$.soilData.Payload"
+        }
+      },
+      "ResultPath": "$.plantingWindows",
+      "Next": "RecommendSeedVarieties",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "AnalysisFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "RecommendSeedVarieties": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "SeedVarietyRecommenderFunction",
+        "Payload": {
+          "plantingWindows.$": "$.plantingWindows.Payload",
+          "soilData.$": "$.soilData.Payload",
+          "cropType.$": "$.cropType"
+        }
+      },
+      "ResultPath": "$.seedRecommendations",
+      "Next": "CalculateConfidenceScores",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "RecommendationFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "CalculateConfidenceScores": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ConfidenceScorerFunction",
+        "Payload": {
+          "plantingWindows.$": "$.plantingWindows.Payload",
+          "weatherData.$": "$.weatherData.Payload"
+        }
+      },
+      "ResultPath": "$.confidenceScores",
+      "Next": "CheckHighRiskWeather",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ]
+    },
+    "CheckHighRiskWeather": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.confidenceScores.Payload.hasHighRisk",
+          "BooleanEquals": true,
+          "Next": "GenerateAlternatives"
+        }
+      ],
+      "Default": "StoreRecommendation"
+    },
+    "GenerateAlternatives": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "AlternativeCropGeneratorFunction",
+        "Payload": {
+          "riskFactors.$": "$.confidenceScores.Payload.riskFactors",
+          "soilData.$": "$.soilData.Payload",
+          "location.$": "$.location"
+        }
+      },
+      "ResultPath": "$.alternatives",
+      "Next": "StoreRecommendation",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ]
+    },
+    "StoreRecommendation": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "RecommendationStorageFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "cropType.$": "$.cropType",
+          "plantingWindows.$": "$.plantingWindows.Payload",
+          "seedRecommendations.$": "$.seedRecommendations.Payload",
+          "confidenceScores.$": "$.confidenceScores.Payload",
+          "alternatives.$": "$.alternatives.Payload",
+          "weatherData.$": "$.weatherData.Payload",
+          "soilData.$": "$.soilData.Payload"
+        }
+      },
+      "ResultPath": "$.storedRecommendation",
+      "Next": "ScheduleDailyUpdate",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "StorageFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "ScheduleDailyUpdate": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "UpdateSchedulerFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "recommendationId.$": "$.storedRecommendation.Payload.recommendationId",
+          "updateFrequency": "daily"
+        }
+      },
+      "ResultPath": "$.updateSchedule",
+      "Next": "NotifyFarmer",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ]
+    },
+    "NotifyFarmer": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "NotificationFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "notificationType": "PlantingRecommendation",
+          "recommendationId.$": "$.storedRecommendation.Payload.recommendationId",
+          "hasHighRisk.$": "$.confidenceScores.Payload.hasHighRisk"
+        }
+      },
+      "ResultPath": "$.notification",
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "WeatherFetchFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "WeatherFetchFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "SoilDataRetrievalFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "SoilDataRetrievalFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "AnalysisFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "AnalysisFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "RecommendationFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "RecommendationFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "StorageFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "StorageFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "Fail": {
+      "Type": "Fail",
+      "Error": "WorkflowFailed",
+      "Cause": "Sowing Oracle workflow failed after retries"
+    }
+  }
+}

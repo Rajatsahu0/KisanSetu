@@ -1,0 +1,285 @@
+{
+  "Comment": "Quality Grader Vision-Based Produce Grading Workflow",
+  "StartAt": "UploadImage",
+  "States": {
+    "UploadImage": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ImageUploadFunction",
+        "Payload": {
+          "imageData.$": "$.imageData",
+          "farmerId.$": "$.farmerId",
+          "produceType.$": "$.produceType"
+        }
+      },
+      "ResultPath": "$.uploadResult",
+      "Next": "AnalyzeImage",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "UploadFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "AnalyzeImage": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ImageAnalyzerFunction",
+        "Payload": {
+          "imageS3Key.$": "$.uploadResult.Payload.s3Key",
+          "produceType.$": "$.produceType"
+        }
+      },
+      "ResultPath": "$.analysisResult",
+      "Next": "CheckImageQuality",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "AnalysisFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "CheckImageQuality": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.analysisResult.Payload.isQualitySufficient",
+          "BooleanEquals": false,
+          "Next": "RequestRetake"
+        }
+      ],
+      "Default": "ClassifyQuality"
+    },
+    "RequestRetake": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "RetakeRequestFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "reason.$": "$.analysisResult.Payload.qualityIssue",
+          "guidance.$": "$.analysisResult.Payload.retakeGuidance"
+        }
+      },
+      "ResultPath": "$.retakeRequest",
+      "End": true
+    },
+    "ClassifyQuality": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "QualityClassifierFunction",
+        "Payload": {
+          "analysisResult.$": "$.analysisResult.Payload",
+          "produceType.$": "$.produceType"
+        }
+      },
+      "ResultPath": "$.qualityGrade",
+      "Next": "CalculatePrice",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ClassificationFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "CalculatePrice": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "PriceCalculatorFunction",
+        "Payload": {
+          "grade.$": "$.qualityGrade.Payload.grade",
+          "commodity.$": "$.produceType",
+          "location.$": "$.location"
+        }
+      },
+      "ResultPath": "$.certifiedPrice",
+      "Next": "StoreGradingRecord",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "PriceCalculationFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "StoreGradingRecord": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "GradingRecordStoreFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "produceType.$": "$.produceType",
+          "grade.$": "$.qualityGrade.Payload.grade",
+          "certifiedPrice.$": "$.certifiedPrice.Payload.price",
+          "imageS3Key.$": "$.uploadResult.Payload.s3Key",
+          "analysisResult.$": "$.analysisResult.Payload"
+        }
+      },
+      "ResultPath": "$.gradingRecord",
+      "Next": "NotifyFarmer",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "StorageFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "NotifyFarmer": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "NotificationFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "grade.$": "$.qualityGrade.Payload.grade",
+          "certifiedPrice.$": "$.certifiedPrice.Payload.price",
+          "recordId.$": "$.gradingRecord.Payload.recordId"
+        }
+      },
+      "ResultPath": "$.notification",
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "UploadFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "UploadFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "AnalysisFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "AnalysisFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "ClassificationFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "ClassificationFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "PriceCalculationFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "PriceCalculationFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "StorageFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "StorageFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "Fail": {
+      "Type": "Fail",
+      "Error": "WorkflowFailed",
+      "Cause": "Quality Grader workflow failed after retries"
+    }
+  }
+}

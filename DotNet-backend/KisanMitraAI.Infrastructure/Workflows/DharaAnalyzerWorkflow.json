@@ -1,0 +1,383 @@
+{
+  "Comment": "Dhara-Analyzer Soil Health Card Digitization and Regenerative Planning Workflow",
+  "StartAt": "UploadDocument",
+  "States": {
+    "UploadDocument": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "DocumentUploadFunction",
+        "Payload": {
+          "documentData.$": "$.documentData",
+          "farmerId.$": "$.farmerId",
+          "documentType": "SoilHealthCard"
+        }
+      },
+      "ResultPath": "$.uploadResult",
+      "Next": "ExtractText",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "UploadFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "ExtractText": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:textract:analyzeDocument",
+      "Parameters": {
+        "Document": {
+          "S3Object": {
+            "Bucket.$": "$.uploadResult.Payload.bucket",
+            "Name.$": "$.uploadResult.Payload.s3Key"
+          }
+        },
+        "FeatureTypes": [
+          "FORMS",
+          "TABLES"
+        ]
+      },
+      "ResultPath": "$.extractionResult",
+      "Next": "ParseSoilData",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ExtractionFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "ParseSoilData": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "SoilDataParserFunction",
+        "Payload": {
+          "extractionResult.$": "$.extractionResult",
+          "farmerId.$": "$.farmerId"
+        }
+      },
+      "ResultPath": "$.parsedSoilData",
+      "Next": "ValidateSoilData",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ParsingFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "ValidateSoilData": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "SoilDataValidatorFunction",
+        "Payload": {
+          "soilData.$": "$.parsedSoilData.Payload"
+        }
+      },
+      "ResultPath": "$.validationResult",
+      "Next": "CheckValidation",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ]
+    },
+    "CheckValidation": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.validationResult.Payload.isValid",
+          "BooleanEquals": false,
+          "Next": "RequestManualVerification"
+        }
+      ],
+      "Default": "StoreSoilData"
+    },
+    "RequestManualVerification": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ManualVerificationRequestFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "invalidFields.$": "$.validationResult.Payload.invalidFields",
+          "soilData.$": "$.parsedSoilData.Payload"
+        }
+      },
+      "ResultPath": "$.verificationRequest",
+      "End": true
+    },
+    "StoreSoilData": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "SoilDataStorageFunction",
+        "Payload": {
+          "soilData.$": "$.parsedSoilData.Payload",
+          "farmerId.$": "$.farmerId"
+        }
+      },
+      "ResultPath": "$.storedSoilData",
+      "Next": "GenerateRegenerativePlan",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "StorageFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "GenerateRegenerativePlan": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "RegenerativePlanGeneratorFunction",
+        "Payload": {
+          "soilData.$": "$.parsedSoilData.Payload",
+          "farmerId.$": "$.farmerId"
+        }
+      },
+      "ResultPath": "$.regenerativePlan",
+      "Next": "EstimateCarbonSequestration",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "PlanGenerationFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "EstimateCarbonSequestration": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "CarbonEstimatorFunction",
+        "Payload": {
+          "plan.$": "$.regenerativePlan.Payload.plan",
+          "soilData.$": "$.parsedSoilData.Payload"
+        }
+      },
+      "ResultPath": "$.carbonEstimate",
+      "Next": "StorePlan",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ]
+    },
+    "StorePlan": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "PlanStorageFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "plan.$": "$.regenerativePlan.Payload.plan",
+          "carbonEstimate.$": "$.carbonEstimate.Payload"
+        }
+      },
+      "ResultPath": "$.storedPlan",
+      "Next": "DeliverPlan",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ]
+    },
+    "DeliverPlan": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "PlanDeliveryFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "planId.$": "$.storedPlan.Payload.planId",
+          "preferredLanguage.$": "$.preferredLanguage",
+          "deliveryFormats": [
+            "text",
+            "voice",
+            "pdf"
+          ]
+        }
+      },
+      "ResultPath": "$.deliveryResult",
+      "Next": "NotifyFarmer",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ]
+    },
+    "NotifyFarmer": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "NotificationFunction",
+        "Payload": {
+          "farmerId.$": "$.farmerId",
+          "notificationType": "SoilCardDigitized",
+          "planId.$": "$.storedPlan.Payload.planId",
+          "deliveryUrls.$": "$.deliveryResult.Payload.urls"
+        }
+      },
+      "ResultPath": "$.notification",
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "UploadFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "UploadFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "ExtractionFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "ExtractionFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "ParsingFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "ParsingFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "StorageFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "StorageFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "PlanGenerationFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ErrorHandlerFunction",
+        "Payload": {
+          "errorType": "PlanGenerationFailed",
+          "farmerId.$": "$.farmerId",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "Fail"
+    },
+    "Fail": {
+      "Type": "Fail",
+      "Error": "WorkflowFailed",
+      "Cause": "Dhara-Analyzer workflow failed after retries"
+    }
+  }
+}
